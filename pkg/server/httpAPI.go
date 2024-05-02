@@ -428,25 +428,48 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 
 	config["name"] = podName
 
-	initAdPeerURL := config["initial-advertise-peer-urls"]
-	protocol, svcName, namespace, peerPort, err := parsePeerURL(fmt.Sprint(initAdPeerURL))
-	if err != nil {
-		h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer urls : %v", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	domaiName := fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
-	config["initial-advertise-peer-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, peerPort)
+	if config["initial-cluster-state"] != miscellaneous.ClusterStateExisting {
+		initAdPeerURL := config["initial-advertise-peer-urls"]
+		protocol, svcName, namespace, peerPort, err := parsePeerURL(fmt.Sprint(initAdPeerURL))
+		if err != nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer urls : %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		domaiName := fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
+		config["initial-advertise-peer-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, peerPort)
 
-	advClientURL := config["advertise-client-urls"]
-	protocol, svcName, namespace, clientPort, err := parseAdvClientURL(fmt.Sprint(advClientURL))
-	if err != nil {
-		h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise client url : %v", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
+		advClientURL := config["advertise-client-urls"]
+		protocol, svcName, namespace, clientPort, err := parseAdvClientURL(fmt.Sprint(advClientURL))
+		if err != nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise client url : %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		domaiName = fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
+		config["advertise-client-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, clientPort)
+	} else {
+		initAdPeerURL := config["initial-advertise-peer-urls"]
+		if initAdPeerURL == nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer urls : %v", initAdPeerURL)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		peerURLs := strings.Split(initAdPeerURL.(string), ",")
+		fmt.Printf("PeerURLs: %v\n", peerURLs)
+
+		for _, peerURL := range peerURLs {
+			peerURLParts := strings.Split(peerURL, "=")
+			if peerURLParts[0] == podName {
+				config["initial-advertise-peer-urls"] = peerURLParts[1]
+				config["advertise-client-urls"] = peerURLParts[1][:strings.LastIndex(peerURLParts[1], ":")] + ":2379"
+				fmt.Printf("Initial-Advertise-Peer-URLs: %v\n", config["initial-advertise-peer-urls"])
+				fmt.Printf("Advertise-Client-URLs: %v\n", config["advertise-client-urls"])
+				break
+			}
+		}
 	}
-	domaiName = fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
-	config["advertise-client-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, clientPort)
 
 	config["initial-cluster"] = getInitialCluster(req.Context(), fmt.Sprint(config["initial-cluster"]), *h.EtcdConnectionConfig, *h.Logger, podName)
 
@@ -462,7 +485,11 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	config["initial-cluster-state"] = state
+
+	// In case custom config
+	if config["initial-cluster-state"] != miscellaneous.ClusterStateExisting {
+		config["initial-cluster-state"] = state
+	}
 
 	data, err := yaml.Marshal(&config)
 	if err != nil {
