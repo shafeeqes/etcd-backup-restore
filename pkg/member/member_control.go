@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	utilError "github.com/gardener/etcd-backup-restore/pkg/errors"
@@ -203,6 +204,61 @@ func getMemberPeerURL(configFile string, podName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	initialCluster := config["initial-cluster-state"]
+	if initialCluster == miscellaneous.ClusterStateExisting {
+		// This is the case to parse it from the service
+
+		// clientSet, err := miscellaneous.GetKubernetesClientSetOrError()
+		// if err != nil {
+		// 	return "", fmt.Errorf("failed to create kubernetes clientset: %v", err)
+		// }
+
+		// // Use clientSet to query for a service with the label initial-advertise-peer-urls
+		// serviceList := &corev1.ServiceList{}
+		// listOpts := &client.ListOptions{
+		// 	LabelSelector: labels.SelectorFromSet(map[string]string{"initial-advertise-peer-urls": podName}),
+		// 	Namespace:     os.Getenv("POD_NAMESPACE"),
+		// }
+
+		// if err := clientSet.List(context.Background(), serviceList, listOpts); err != nil {
+		// 	fmt.Println("Error in listing services", serviceList.String(), listOpts.LabelSelector.String())
+		// 	return "", fmt.Errorf("could not list services with the label initial-advertise-peer-urls=%s: %v", "initAdPeerURL", err)
+		// }
+
+		// if len(serviceList.Items) == 0 {
+		// 	return "", fmt.Errorf("no service found with the label initial-advertise-peer-urls=%s", podName)
+		// }
+
+		// service := serviceList.Items[0]
+		// loadBalancerIngress := service.Status.LoadBalancer.Ingress
+		// if len(loadBalancerIngress) == 0 {
+		// 	return "", fmt.Errorf("no load balancer ingress found for service %s", service.Name)
+		// }
+
+		// loadBalancerIP := loadBalancerIngress[0].Hostname
+		// return fmt.Sprintf("http://%v:2380", loadBalancerIP), nil
+
+		// Lets modify the code to return the peerURL from the config file
+
+		initAdPeerURL := config["initial-advertise-peer-urls"]
+		if initAdPeerURL == nil {
+			return "", errors.New("initial-advertise-peer-urls must be set in etcd config")
+		}
+
+		peerURLs := strings.Split(initAdPeerURL.(string), ",")
+		fmt.Printf("PeerURLs: %v\n", peerURLs)
+
+		for _, peerURL := range peerURLs {
+			peerURLParts := strings.Split(peerURL, "=")
+			if peerURLParts[0] == podName {
+				return peerURLParts[1], nil
+			}
+		}
+
+		return "", fmt.Errorf("could not find peer URL for %s in the config file", podName)
+	}
+
 	initAdPeerURL := config["initial-advertise-peer-urls"]
 	if initAdPeerURL == nil {
 		return "", errors.New("initial-advertise-peer-urls must be set in etcd config")
