@@ -554,9 +554,15 @@ func IsPeerURLTLSEnabled() (bool, error) {
 	}
 	initAdPeerURL := config["initial-advertise-peer-urls"]
 
-	memberPeerURL, err := ParsePeerURL(initAdPeerURL.(string), podName)
-	if err != nil {
-		return false, err
+	var memberPeerURL string
+	if config["initial-cluster-state"] != ClusterStateExisting {
+		memberPeerURL, err = ParsePeerURL(initAdPeerURL.(string), podName)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		peerURLs := strings.Split(initAdPeerURL.(string), ",")
+		memberPeerURL = strings.Split(peerURLs[0], "=")[1]
 	}
 
 	peerURL, err := url.Parse(memberPeerURL)
