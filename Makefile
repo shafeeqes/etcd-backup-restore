@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 VERSION             ?= $(shell cat VERSION)
-REGISTRY            ?= europe-docker.pkg.dev/gardener-project/snapshots
-IMAGE_REPOSITORY    := $(REGISTRY)/gardener/etcdbrctl
-IMAGE_TAG           := $(VERSION)
+REGISTRY            ?= shafeeqes
+IMAGE_REPOSITORY    := shafeeqes/etcdbrctl
+IMAGE_TAG           := exist-scaleup
 BUILD_DIR           := build
 BIN_DIR             := bin
 COVERPROFILE        := test/output/coverprofile.out
