@@ -466,7 +466,6 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 			if peerURLParts[0] == podName {
 				pus = append(pus, peerURLParts[1])
 				cus = append(cus, peerURLParts[1][:strings.LastIndex(peerURLParts[1], ":")]+":2379")
-				break
 			}
 		}
 
