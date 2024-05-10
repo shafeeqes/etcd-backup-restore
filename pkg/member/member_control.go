@@ -249,11 +249,15 @@ func getMemberPeerURL(configFile string, podName string) (string, error) {
 		peerURLs := strings.Split(initAdPeerURL.(string), ",")
 		fmt.Printf("PeerURLs: %v\n", peerURLs)
 
+		pus := []string{}
 		for _, peerURL := range peerURLs {
 			peerURLParts := strings.Split(peerURL, "=")
 			if peerURLParts[0] == podName {
-				return peerURLParts[1], nil
+				pus = append(pus, peerURLParts[1])
 			}
+		}
+		if len(pus) > 0 {
+			return strings.Join(pus, ","), nil
 		}
 
 		return "", fmt.Errorf("could not find peer URL for %s in the config file", podName)
