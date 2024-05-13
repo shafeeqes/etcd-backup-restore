@@ -562,7 +562,16 @@ func IsPeerURLTLSEnabled() (bool, error) {
 		}
 	} else {
 		peerURLs := strings.Split(initAdPeerURL.(string), ",")
-		memberPeerURL = strings.Split(peerURLs[0], "=")[1]
+
+		pus := []string{}
+		for _, peerURL := range peerURLs {
+			peerURLParts := strings.Split(peerURL, "=")
+			if peerURLParts[0] == podName {
+				pus = append(pus, peerURLParts[1])
+			}
+		}
+
+		memberPeerURL = strings.Join(pus, ",")
 	}
 
 	peerURL, err := url.Parse(memberPeerURL)

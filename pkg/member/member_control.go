@@ -257,6 +257,7 @@ func getMemberPeerURL(configFile string, podName string) (string, error) {
 			}
 		}
 		if len(pus) > 0 {
+			fmt.Printf("Final PeerURL for podName %s: %v\n", podName, strings.Join(pus, ","))
 			return strings.Join(pus, ","), nil
 		}
 
