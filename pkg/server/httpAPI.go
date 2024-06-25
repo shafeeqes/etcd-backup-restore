@@ -428,41 +428,92 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 
 	config["name"] = podName
 
-	initAdPeerURL := config["initial-advertise-peer-urls"]
-	protocol, svcName, namespace, peerPort, err := parsePeerURL(fmt.Sprint(initAdPeerURL))
-	if err != nil {
-		h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer urls : %v", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	domaiName := fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
-	config["initial-advertise-peer-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, peerPort)
+	if config["initial-cluster-state"] != miscellaneous.ClusterStateExisting {
+		initAdPeerURL := config["initial-advertise-peer-urls"]
+		protocol, svcName, namespace, peerPort, err := parsePeerURL(fmt.Sprint(initAdPeerURL))
+		if err != nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer urls : %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		domaiName := fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
+		config["initial-advertise-peer-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, peerPort)
 
-	advClientURL := config["advertise-client-urls"]
-	protocol, svcName, namespace, clientPort, err := parseAdvClientURL(fmt.Sprint(advClientURL))
-	if err != nil {
-		h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise client url : %v", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
+		advClientURL := config["advertise-client-urls"]
+		protocol, svcName, namespace, clientPort, err := parseAdvClientURL(fmt.Sprint(advClientURL))
+		if err != nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise client url : %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		domaiName = fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
+		config["advertise-client-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, clientPort)
+	} else {
+		initAdPeerURL := config["initial-advertise-peer-urls"]
+		if initAdPeerURL == nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer url")
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		peerURLs := strings.Split(initAdPeerURL.(string), ",")
+		// TODO: Remove this line
+		fmt.Printf("PeerURLs: %v\n", peerURLs)
+
+		pus := []string{}
+		for _, peerURL := range peerURLs {
+			peerURLParts := strings.Split(peerURL, "=")
+			if peerURLParts[0] == podName {
+				pus = append(pus, peerURLParts[1])
+			}
+		}
+		config["initial-advertise-peer-urls"] = strings.Join(pus, ",")
+
+		advClientURL := config["advertise-client-urls"]
+		if advClientURL == nil {
+			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise client url")
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		clientURLs := strings.Split(advClientURL.(string), ",")
+		// TODO: Remove this line
+		fmt.Printf("ClientURLs: %v\n", clientURLs)
+
+		cus := []string{}
+		for _, clientURL := range clientURLs {
+			clientURLParts := strings.Split(clientURL, "=")
+			if clientURLParts[0] == podName {
+				cus = append(cus, clientURLParts[1])
+			}
+		}
+		config["advertise-client-urls"] = strings.Join(cus, ",")
+
+		// TODO: Remove these lines
+		fmt.Printf("Initial-Advertise-Peer-URLs: %v\n", config["initial-advertise-peer-urls"])
+		fmt.Printf("Advertise-Client-URLs: %v\n", config["advertise-client-urls"])
 	}
-	domaiName = fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
-	config["advertise-client-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, clientPort)
 
 	config["initial-cluster"] = getInitialCluster(req.Context(), fmt.Sprint(config["initial-cluster"]), *h.EtcdConnectionConfig, *h.Logger, podName)
 
-	clusterSize, err := miscellaneous.GetClusterSize(fmt.Sprint(config["initial-cluster"]))
-	if err != nil {
-		h.Logger.Warnf("Unable to determine the cluster size: %v", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
+	if config["initial-cluster-state"] != miscellaneous.ClusterStateExisting {
+		clusterSize, err := miscellaneous.GetClusterSize(fmt.Sprint(config["initial-cluster"]))
+		if err != nil {
+			h.Logger.Warnf("Unable to determine the cluster size: %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		state, err := h.GetClusterState(req.Context(), clusterSize, clientSet, podName, podNS)
+		if err != nil {
+			h.Logger.Warnf("failed to get cluster state %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		// In case custom config
+		config["initial-cluster-state"] = state
 	}
-	state, err := h.GetClusterState(req.Context(), clusterSize, clientSet, podName, podNS)
-	if err != nil {
-		h.Logger.Warnf("failed to get cluster state %v", err)
-		rw.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	config["initial-cluster-state"] = state
 
 	data, err := yaml.Marshal(&config)
 	if err != nil {
@@ -505,7 +556,6 @@ func (h *HTTPHandler) GetClusterState(ctx context.Context, clusterSize int, clie
 			return miscellaneous.ClusterStateExisting, nil
 		}
 		return miscellaneous.ClusterStateNew, nil
-
 	}
 
 	return *state, nil

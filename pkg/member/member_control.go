@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	utilError "github.com/gardener/etcd-backup-restore/pkg/errors"
@@ -117,6 +118,7 @@ func (m *memberControl) AddMemberAsLearner(ctx context.Context) error {
 	if err != nil {
 		m.logger.Fatalf("Error fetching etcd member URL : %v", err)
 	}
+	memberURLs := strings.Split(memberURL, ",")
 
 	cli, err := m.clientFactory.NewCluster()
 	if err != nil {
@@ -127,7 +129,7 @@ func (m *memberControl) AddMemberAsLearner(ctx context.Context) error {
 	memAddCtx, cancel := context.WithTimeout(ctx, EtcdTimeout)
 	defer cancel()
 	start := time.Now()
-	response, err := cli.MemberAddAsLearner(memAddCtx, []string{memberURL})
+	response, err := cli.MemberAddAsLearner(memAddCtx, memberURLs)
 	if err != nil {
 		if errors.Is(err, rpctypes.Error(rpctypes.ErrGRPCPeerURLExist)) || errors.Is(err, rpctypes.Error(rpctypes.ErrGRPCMemberExist)) {
 			m.logger.Infof("Member %s already part of etcd cluster", memberURL)
@@ -203,10 +205,33 @@ func getMemberPeerURL(configFile string, podName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	initAdPeerURL := config["initial-advertise-peer-urls"]
 	if initAdPeerURL == nil {
 		return "", errors.New("initial-advertise-peer-urls must be set in etcd config")
 	}
+
+	initialCluster := config["initial-cluster-state"]
+	if initialCluster == miscellaneous.ClusterStateExisting {
+		peerURLs := strings.Split(initAdPeerURL.(string), ",")
+		// TODO: Remove this line
+		fmt.Printf("PeerURLs: %v\n", peerURLs)
+
+		pus := []string{}
+		for _, peerURL := range peerURLs {
+			peerURLParts := strings.Split(peerURL, "=")
+			if peerURLParts[0] == podName {
+				pus = append(pus, peerURLParts[1])
+			}
+		}
+
+		if len(pus) > 0 {
+			return strings.Join(pus, ","), nil
+		}
+
+		return "", fmt.Errorf("could not find peer URL for %s in the config file", podName)
+	}
+
 	peerURL, err := miscellaneous.ParsePeerURL(initAdPeerURL.(string), podName)
 	if err != nil {
 		return "", fmt.Errorf("could not parse peer URL from the config file : %v", err)
@@ -223,11 +248,12 @@ func (m *memberControl) doUpdateMemberPeerAddress(ctx context.Context, cli etcdC
 	if err != nil {
 		return fmt.Errorf("could not fetch member URL : %v", err)
 	}
+	memberPeerURLs := strings.Split(memberPeerURL, ",")
 
 	memberUpdateCtx, cancel := context.WithTimeout(ctx, EtcdTimeout)
 	defer cancel()
 
-	if _, err = cli.MemberUpdate(memberUpdateCtx, id, []string{memberPeerURL}); err == nil {
+	if _, err = cli.MemberUpdate(memberUpdateCtx, id, memberPeerURLs); err == nil {
 		m.logger.Info("Successfully updated the member peer URL")
 		return nil
 	}
