@@ -428,8 +428,8 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 
 	config["name"] = podName
 
-	if config["initial-cluster-state"] != miscellaneous.ClusterStateExisting {
-		initAdPeerURL := config["initial-advertise-peer-urls"]
+	initAdPeerURL := config["initial-advertise-peer-urls"]
+	if strings.Contains(initAdPeerURL.(string), "@") {
 		protocol, svcName, namespace, peerPort, err := parsePeerURL(fmt.Sprint(initAdPeerURL))
 		if err != nil {
 			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer urls : %v", err)
@@ -449,7 +449,6 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 		domaiName = fmt.Sprintf("%s.%s.%s", svcName, namespace, "svc")
 		config["advertise-client-urls"] = fmt.Sprintf("%s://%s.%s:%s", protocol, podName, domaiName, clientPort)
 	} else {
-		initAdPeerURL := config["initial-advertise-peer-urls"]
 		if initAdPeerURL == nil {
 			h.Logger.Warnf("Unable to determine service name, namespace, peer port from advertise peer url")
 			rw.WriteHeader(http.StatusInternalServerError)
@@ -496,24 +495,22 @@ func (h *HTTPHandler) serveConfig(rw http.ResponseWriter, req *http.Request) {
 
 	config["initial-cluster"] = getInitialCluster(req.Context(), fmt.Sprint(config["initial-cluster"]), *h.EtcdConnectionConfig, *h.Logger, podName)
 
-	if config["initial-cluster-state"] != miscellaneous.ClusterStateExisting {
-		clusterSize, err := miscellaneous.GetClusterSize(fmt.Sprint(config["initial-cluster"]))
-		if err != nil {
-			h.Logger.Warnf("Unable to determine the cluster size: %v", err)
-			rw.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		state, err := h.GetClusterState(req.Context(), clusterSize, clientSet, podName, podNS)
-		if err != nil {
-			h.Logger.Warnf("failed to get cluster state %v", err)
-			rw.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		// In case custom config
-		config["initial-cluster-state"] = state
+	clusterSize, err := miscellaneous.GetClusterSize(fmt.Sprint(config["initial-cluster"]))
+	if err != nil {
+		h.Logger.Warnf("Unable to determine the cluster size: %v", err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
 	}
+
+	state, err := h.GetClusterState(req.Context(), clusterSize, clientSet, podName, podNS)
+	if err != nil {
+		h.Logger.Warnf("failed to get cluster state %v", err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// In case custom config
+	config["initial-cluster-state"] = state
 
 	data, err := yaml.Marshal(&config)
 	if err != nil {

@@ -211,27 +211,6 @@ func getMemberPeerURL(configFile string, podName string) (string, error) {
 		return "", errors.New("initial-advertise-peer-urls must be set in etcd config")
 	}
 
-	initialCluster := config["initial-cluster-state"]
-	if initialCluster == miscellaneous.ClusterStateExisting {
-		peerURLs := strings.Split(initAdPeerURL.(string), ",")
-		// TODO: Remove this line
-		fmt.Printf("PeerURLs: %v\n", peerURLs)
-
-		pus := []string{}
-		for _, peerURL := range peerURLs {
-			peerURLParts := strings.Split(peerURL, "=")
-			if peerURLParts[0] == podName {
-				pus = append(pus, peerURLParts[1])
-			}
-		}
-
-		if len(pus) > 0 {
-			return strings.Join(pus, ","), nil
-		}
-
-		return "", fmt.Errorf("could not find peer URL for %s in the config file", podName)
-	}
-
 	peerURL, err := miscellaneous.ParsePeerURL(initAdPeerURL.(string), podName)
 	if err != nil {
 		return "", fmt.Errorf("could not parse peer URL from the config file : %v", err)

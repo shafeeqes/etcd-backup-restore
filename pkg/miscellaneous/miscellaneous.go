@@ -531,12 +531,31 @@ func ReadConfigFileAsMap(path string) (map[string]interface{}, error) {
 
 // ParsePeerURL forms a PeerURL, given podName by parsing the initial-advertise-peer-urls
 func ParsePeerURL(initialAdvertisePeerURLs, podName string) (string, error) {
-	tokens := strings.Split(initialAdvertisePeerURLs, "@")
-	if len(tokens) < 4 {
-		return "", fmt.Errorf("invalid peer URL : %s", initialAdvertisePeerURLs)
+	if strings.Contains(initialAdvertisePeerURLs, "@") {
+		tokens := strings.Split(initialAdvertisePeerURLs, "@")
+		if len(tokens) < 4 {
+			return "", fmt.Errorf("invalid peer URL : %s", initialAdvertisePeerURLs)
+		}
+		domaiName := fmt.Sprintf("%s.%s.%s", tokens[1], tokens[2], "svc")
+		return fmt.Sprintf("%s://%s.%s:%s", tokens[0], podName, domaiName, tokens[3]), nil
+	} else {
+		peerURLs := strings.Split(initialAdvertisePeerURLs, ",")
+		// TODO: Remove this line
+		fmt.Printf("PeerURLs: %v\n", peerURLs)
+
+		pus := []string{}
+		for _, peerURL := range peerURLs {
+			peerURLParts := strings.Split(peerURL, "=")
+			if peerURLParts[0] == podName {
+				pus = append(pus, peerURLParts[1])
+			}
+		}
+
+		if len(pus) > 0 {
+			return strings.Join(pus, ","), nil
+		}
 	}
-	domaiName := fmt.Sprintf("%s.%s.%s", tokens[1], tokens[2], "svc")
-	return fmt.Sprintf("%s://%s.%s:%s", tokens[0], podName, domaiName, tokens[3]), nil
+	return "", fmt.Errorf("invalid peer URL : %s", initialAdvertisePeerURLs)
 }
 
 // IsPeerURLTLSEnabled checks whether the peer address is TLS enabled or not.
@@ -554,15 +573,9 @@ func IsPeerURLTLSEnabled() (bool, error) {
 	}
 	initAdPeerURL := config["initial-advertise-peer-urls"]
 
-	var memberPeerURL string
-	if config["initial-cluster-state"] != ClusterStateExisting {
-		memberPeerURL, err = ParsePeerURL(initAdPeerURL.(string), podName)
-		if err != nil {
-			return false, err
-		}
-	} else {
-		peerURLs := strings.Split(initAdPeerURL.(string), ",")
-		memberPeerURL = strings.Split(peerURLs[0], "=")[1]
+	memberPeerURL, err := ParsePeerURL(initAdPeerURL.(string), podName)
+	if err != nil {
+		return false, err
 	}
 
 	peerURL, err := url.Parse(memberPeerURL)
